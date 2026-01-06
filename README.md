@@ -68,77 +68,104 @@ These modules demonstrate how to **interface directly with the Linux USB subsyst
 
 ---
 
-## 🛠️ Prerequisites
+## 📦 Prerequisites
 
-- Linux system running **Kernel 5.x or 6.x**
-- Required build tools and kernel headers:
+-- Install required build tools and kernel headers:
 
 ```bash
 sudo apt update
 sudo apt install build-essential linux-headers-$(uname -r)
+```
 
-⚙️ Configuration & Hardware IDs
+---
 
-These drivers are hardcoded for specific USB devices.
-You may need to modify the VENDOR_ID and PRODUCT_ID definitions in the source files to match your hardware.
-Device	Vendor ID	Product ID
-Logitech Mouse	0x046d	0xc077
-Dell Keyboard	0x413c	0x2107
+## ⚙️ Configuration & Hardware IDs
 
-    Use lsusb to find your device IDs.
+-- These drivers are **hardcoded for specific USB devices**.
+-- You may need to modify the `VENDOR_ID` and `PRODUCT_ID` definitions in the source files to match your hardware.
 
-🚀 Installation & Usage
+| Device         | Vendor ID | Product ID |
+| -------------- | --------- | ---------- |
+| Logitech Mouse | `0x046d`  | `0xc077`   |
+| Dell Keyboard  | `0x413c`  | `0x2107`   |
 
-Step 1: Build the Modules
+-- Use the following command to find your device IDs:
 
-Compile both drivers using their respective Makefiles:
+```bash
+lsusb
+```
 
+---
+
+## 🚀 Installation & Usage
+
+### -- Step 1: Build the Modules
+
+-- Compile both drivers using their respective Makefiles:
+
+```bash
 make
+```
 
-Output:
+-- Output:
 
-    Mouse/Logitech_driver.ko
+-- `Mouse/Logitech_driver.ko`
+-- `Keyboard/my_keyboard.ko`
 
-    Keyboard/my_keyboard.ko
+---
 
-Step 2: Unbind the Default usbhid Driver
+### -- Step 2: Unbind the Default `usbhid` Driver
 
-Linux automatically binds USB HID devices to the generic usbhid driver.
-You must detach it before loading your custom drivers.
-Option A: Temporary Unbind
+-- Linux automatically binds USB HID devices to the generic `usbhid` driver.
+-- You must detach it before loading your custom drivers.
 
-Replace the interface ID with your device’s interface path
-(find it via dmesg or lsusb -t).
+#### -- Option A: Temporary Unbind
 
+-- Replace the interface ID with your device’s interface path
+-- (find it via `dmesg` or `lsusb -t`).
+
+```bash
 # Example for Mouse
 sudo sh -c 'echo "1-2:1.0" > /sys/bus/usb/drivers/usbhid/unbind'
 
 # Example for Keyboard
 sudo sh -c 'echo "1-3:1.0" > /sys/bus/usb/drivers/usbhid/unbind'
+```
 
-Step 3: Load the Custom Drivers
+---
 
-Insert the kernel modules:
+### -- Step 3: Load the Custom Drivers
 
+-- Insert the kernel modules:
+
+```bash
 # Load Mouse Driver
 sudo insmod Mouse/Logitech_driver.ko
 
 # Load Keyboard Driver
 sudo insmod Keyboard/my_keyboard.ko
+```
 
-Step 4: Verify
+---
 
-Check kernel logs:
+### -- Step 4: Verify
 
+-- Check kernel logs:
+
+```bash
 sudo dmesg | tail
+```
 
-Expected Output:
+-- Expected Output:
 
-Dell Keyboard Driver Loaded (Fully Functional).
-Logitech Mouse Driver Initialized.
+-- `Dell Keyboard Driver Loaded (Fully Functional).`
+-- `Logitech Mouse Driver Initialized.`
 
-📂 Project Structure
+---
 
+## 📂 Project Structure
+
+```text
 ├── Keyboard
 │   ├── Makefile
 │   ├── Module.symvers
@@ -162,8 +189,11 @@ Logitech Mouse Driver Initialized.
 │   └── Logitech_driver.o
 │
 └── README.md
+```
 
-📜 License
+---
 
-This project is licensed under the GNU General Public License (GPL),
-as it links against and interfaces directly with the Linux Kernel.
+## 📜 License
+
+-- This project is licensed under the **GNU General Public License (GPL)**.
+-- It links against and interfaces directly with the **Linux Kernel**.
