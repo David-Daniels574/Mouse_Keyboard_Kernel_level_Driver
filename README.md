@@ -1,131 +1,168 @@
-# 🖱️ Custom Linux USB Mouse Driver (Kernel Module)
+🖱️⌨️ Custom Linux USB HID Drivers (Kernel Modules)
 
-A **functional Linux Kernel Module (`.ko`)** that acts as a **custom USB device driver** for a Logitech Optical Mouse.
+This project contains **two functional Linux Kernel Modules** that act as custom device drivers for:
 
-This project demonstrates how to **interface directly with the Linux USB subsystem**, **parse raw HID packets manually**, and **register input events with the Linux input subsystem** — all **without relying on the standard `usbhid` driver**.
+1. **Logitech Optical Mouse** (`Logitech_driver.ko`)
+2. **Dell USB Keyboard** (`my_keyboard.ko`)
 
-> ⚠️ **Educational / low-level systems project**  
-> This driver bypasses standard HID abstractions to expose how USB mice actually work at the kernel level.
+These modules demonstrate how to **interface directly with the Linux USB subsystem**, **manually parse raw HID packets**, and **register Linux input events** — all **without relying on the standard `usbhid` driver**.
+
+> **Educational / Low-Level Systems Project**  
+> These drivers intentionally bypass standard HID abstractions to expose how USB devices actually communicate with the kernel via **Interrupt URBs**, **DMA buffers**, and **input subsystem hooks**.
 
 ---
 
 ## 🚀 Features
 
-### 🔌 USB Core Integration
-- Registers directly with the **Linux USB core**
-- Matches devices using **Vendor ID / Product ID**
-- Binds only to the intended mouse device
+### 🔌 Core USB Integration (Both Drivers)
 
-### 🔁 Interrupt Transfers
-- Uses **Interrupt URBs (USB Request Blocks)** to poll the mouse endpoint
-- Handles continuous data flow from the device
+- **Direct USB Core Binding**  
+  Registers directly with the Linux USB Core using Vendor/Product IDs.
 
-### 🧠 Manual HID Parsing
-- Decodes **raw HID report bytes** from the mouse
-- No dependency on `usbhid` or generic HID parsing
+- **DMA-Capable Buffers**  
+  Uses `usb_alloc_coherent()` for efficient and safe DMA transfers.
 
-### 🖱️ Full Input Support
-- ✅ Left, Right, and Middle mouse buttons  
-- ✅ X and Y axis movement  
-- ✅ Scroll wheel support  
+- **Interrupt Transfers**  
+  Submits and manages USB Interrupt URBs for real-time input polling.
 
-### 📡 Protocol Management
-- Forces the mouse into **HID Report Protocol (Protocol 1)**
-- Ensures advanced features like scrolling work correctly
+- **Hot-Plug Support**  
+  Correctly handles device insertion and removal.
+
+---
+
+### 🖱️ Mouse Driver — Logitech Optical Mouse
+
+- **Manual HID Parsing**  
+  Decodes raw USB byte streams for:
+  - X/Y movement
+  - Scroll wheel
+  - Button states
+
+- **Full Input Support**
+  - ✅ Left, Right, Middle click
+  - ✅ Smooth pointer movement
+  - ✅ Scroll wheel support
+
+- **Protocol Management**
+  - Forces **HID Report Protocol (Protocol 1)** for extended functionality
+
+---
+
+### ⌨️ Keyboard Driver — Dell USB Keyboard
+
+- **Scancode Mapping**
+  - Maps USB HID usage codes to Linux input event keycodes
+
+- **Modifier Key Handling**
+  - Full support for **Ctrl, Shift, Alt, Meta (Windows)** keys using bitwise masks
+
+- **Bi-Directional Communication**
+  - Sends control messages to toggle:
+    - Caps Lock
+    - Num Lock
+    - Scroll Lock LEDs
+
+- **Optimized Typing Feel**
+  - Tuned **key repeat rate** and **delay**
+  - Smooth text selection and navigation
 
 ---
 
 ## 🛠️ Prerequisites
 
-- Linux system or VM running **Kernel 5.x or 6.x**
-- Kernel headers and build tools installed
+- Linux system running **Kernel 5.x or 6.x**
+- Required build tools and kernel headers:
 
 ```bash
 sudo apt update
 sudo apt install build-essential linux-headers-$(uname -r)
-```
 
----
+⚙️ Configuration & Hardware IDs
 
-## ⚙️ Installation & Setup
+These drivers are hardcoded for specific USB devices.
+You may need to modify the VENDOR_ID and PRODUCT_ID definitions in the source files to match your hardware.
+Device	Vendor ID	Product ID
+Logitech Mouse	0x046d	0xc077
+Dell Keyboard	0x413c	0x2107
 
+    Use lsusb to find your device IDs.
 
-### Step 1: Blacklist the Default `usbhid` Driver
+🚀 Installation & Usage
+Step 1: Build the Modules
 
-Linux automatically binds USB mice to the `usbhid` driver.  
-To allow your **custom driver** to attach, this device must be ignored by `usbhid`.
+Compile both drivers using their respective Makefiles:
 
-Create a blacklist configuration:
-
-```bash
-echo "options usbhid quirks=0x046d:0xc077:0x0004" | sudo tee /etc/modprobe.d/my_mouse_ignore.conf
-```
-
-Update initramfs and reboot:
-
-```bash
-sudo update-initramfs -u
-sudo reboot
-```
-
-🔴 **After reboot, your mouse will stop working.**  
-This is expected — no driver is currently handling it.
-
----
-
-### Step 2: Build the Kernel Module
-
-Navigate to the project directory:
-
-```bash
 make
-```
 
-This produces:
-```text
-real_mouse.ko
-```
+Output:
 
----
+    Mouse/Logitech_driver.ko
 
-### Step 3: Load the Driver
+    Keyboard/my_keyboard.ko
 
-Insert the kernel module:
+Step 2: Unbind the Default usbhid Driver
 
-```bash
-sudo insmod real_mouse.ko
-```
+Linux automatically binds USB HID devices to the generic usbhid driver.
+You must detach it before loading your custom drivers.
+Option A: Temporary Unbind
 
-Verify successful registration:
+Replace the interface ID with your device’s interface path
+(find it via dmesg or lsusb -t).
 
-```bash
+# Example for Mouse
+sudo sh -c 'echo "1-2:1.0" > /sys/bus/usb/drivers/usbhid/unbind'
+
+# Example for Keyboard
+sudo sh -c 'echo "1-3:1.0" > /sys/bus/usb/drivers/usbhid/unbind'
+
+Step 3: Load the Custom Drivers
+
+Insert the kernel modules:
+
+# Load Mouse Driver
+sudo insmod Mouse/Logitech_driver.ko
+
+# Load Keyboard Driver
+sudo insmod Keyboard/my_keyboard.ko
+
+Step 4: Verify
+
+Check kernel logs:
+
 sudo dmesg | tail
-```
 
-🟢 Your mouse should now be **fully functional again**, driven by your custom kernel module.
+Expected Output:
 
----
+Dell Keyboard Driver Loaded (Fully Functional).
+Logitech Mouse Driver Initialized.
 
-## 📂 Project Structure
+📂 Project Structure
 
-```text
-.
-├── Logitech_driver.c        # Main kernel module source implementing the custom USB mouse driver
-├── Logitech_driver.ko       # Compiled loadable kernel module (inserted with insmod)
-├── Logitech_driver.mod      # Module metadata generated by the kernel build system
-├── Logitech_driver.mod.c    # Auto-generated module information source (init/exit, vermagic)
-├── Logitech_driver.mod.o    # Object file compiled from Logitech_driver.mod.c
-├── Logitech_driver.o        # Object file compiled from Logitech_driver.c
-├── Makefile                 # Kernel build script for compiling the module
-├── Module.symvers           # Symbol versioning information for kernel module linkage
-├── modules.order            # Build-order list of kernel modules
-└── README.md      # Project documentation
-```
+├── Keyboard
+│   ├── Makefile
+│   ├── Module.symvers
+│   ├── modules.order
+│   ├── my_keyboard.c
+│   ├── my_keyboard.ko
+│   ├── my_keyboard.mod
+│   ├── my_keyboard.mod.c
+│   ├── my_keyboard.mod.o
+│   └── my_keyboard.o
+│
+├── Mouse
+│   ├── Makefile
+│   ├── Module.symvers
+│   ├── modules.order
+│   ├── Logitech_driver.c
+│   ├── Logitech_driver.ko
+│   ├── Logitech_driver.mod
+│   ├── Logitech_driver.mod.c
+│   ├── Logitech_driver.mod.o
+│   └── Logitech_driver.o
+│
+└── README.md
 
+📜 License
 
----
-
-## 📜 License
-
-This project is licensed under the **GNU General Public License (GPL)**  
-as it directly links against and interfaces with the Linux Kernel.
+This project is licensed under the GNU General Public License (GPL),
+as it links against and interfaces directly with the Linux Kernel.
