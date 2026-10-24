@@ -73,12 +73,12 @@ static int kbd_event(struct input_dev *dev, unsigned int type, unsigned int code
 
 static void kbd_irq(struct urb *urb) {
     struct usb_kbd *kbd = urb->context;
-    int i;
+    int i, status;
 
     switch (urb->status) {
         case 0: break;
         case -ECONNRESET: case -ENOENT: case -ESHUTDOWN: return;
-        default: return; 
+        default: goto resubmit; /* transient error: drop this report, keep polling */
     }
 
     /* 1. Modifiers: Directly map USB bits to Input Keys */
@@ -107,7 +107,11 @@ static void kbd_irq(struct urb *urb) {
 
     memcpy(kbd->old_keys, kbd->data + 2, 6);
     input_sync(kbd->input);
-    usb_submit_urb(urb, GFP_ATOMIC);
+
+resubmit:
+    status = usb_submit_urb(urb, GFP_ATOMIC);
+    if (status)
+        dev_err(&kbd->udev->dev, "can't resubmit intr, %d\n", status);
 }
 
 static int kbd_probe(struct usb_interface *intf, const struct usb_device_id *id) {
@@ -115,7 +119,7 @@ static int kbd_probe(struct usb_interface *intf, const struct usb_device_id *id)
     struct usb_endpoint_descriptor *ep_irq;
     struct usb_kbd *kbd;
     struct input_dev *input_dev;
-    int i, pipe, maxp;
+    int i, pipe, maxp, error = -ENOMEM;
 
     if (intf->cur_altsetting->desc.bNumEndpoints < 1) return -ENODEV;
     ep_irq = &intf->cur_altsetting->endpoint[0].desc;
@@ -123,17 +127,22 @@ static int kbd_probe(struct usb_interface *intf, const struct usb_device_id *id)
 
     kbd = kzalloc(sizeof(struct usb_kbd), GFP_KERNEL);
     input_dev = input_allocate_device();
-    if (!kbd || !input_dev) return -ENOMEM;
+    if (!kbd || !input_dev) goto fail1;
 
     kbd->udev = udev;
     kbd->input = input_dev;
     kbd->interface = intf;
-    
+
     kbd->data = usb_alloc_coherent(udev, DATA_SIZE, GFP_KERNEL, &kbd->data_dma);
+    if (!kbd->data) goto fail1;
     kbd->leds = usb_alloc_coherent(udev, 1, GFP_KERNEL, &kbd->leds_dma);
+    if (!kbd->leds) goto fail2;
     kbd->cr   = usb_alloc_coherent(udev, sizeof(struct usb_ctrlrequest), GFP_KERNEL, &kbd->cr_dma);
+    if (!kbd->cr) goto fail3;
     kbd->irq_urb = usb_alloc_urb(0, GFP_KERNEL);
+    if (!kbd->irq_urb) goto fail4;
     kbd->led_urb = usb_alloc_urb(0, GFP_KERNEL);
+    if (!kbd->led_urb) goto fail5;
 
     input_dev->name = "My Dell Keyboard (Shortcuts Fixed)";
     input_dev->phys = "usb/input0";
@@ -161,8 +170,9 @@ static int kbd_probe(struct usb_interface *intf, const struct usb_device_id *id)
     set_bit(KEY_RIGHTMETA,  input_dev->keybit);
 
     /* Snappy Repeat Rate for selection (Shift+Arrows) */
-    input_dev->rep[REP_DELAY] = 250;
-    input_dev->rep[REP_PERIOD] = 33;
+    /* Setting rep[] by hand would tell the input core the driver repeats keys itself;
+       input_enable_softrepeat() sets the values and keeps the core's repeat timer. */
+    input_enable_softrepeat(input_dev, 250, 33);
     input_dev->event = kbd_event;
 
     kbd->cr->bRequestType = USB_TYPE_CLASS | USB_RECIP_INTERFACE;
@@ -189,17 +199,35 @@ static int kbd_probe(struct usb_interface *intf, const struct usb_device_id *id)
     usb_control_msg(udev, usb_sndctrlpipe(udev, 0), 0x0B, USB_TYPE_CLASS | USB_RECIP_INTERFACE, 0, 
                     intf->cur_altsetting->desc.bInterfaceNumber, NULL, 0, USB_CTRL_SET_TIMEOUT);
 
-    if (input_register_device(kbd->input)) goto fail;
+    error = input_register_device(kbd->input);
+    if (error) goto fail6;
     usb_set_intfdata(intf, kbd);
-    usb_submit_urb(kbd->irq_urb, GFP_KERNEL);
+
+    error = usb_submit_urb(kbd->irq_urb, GFP_KERNEL);
+    if (error) goto fail7;
 
     pr_info("Dell Keyboard Driver Loaded (Fully Functional).\n");
     return 0;
 
-fail:
+fail7:
+    usb_set_intfdata(intf, NULL);
+    input_unregister_device(input_dev);
+    input_dev = NULL;
+    usb_kill_urb(kbd->led_urb); /* an LED update may have been sent after registration */
+fail6:
+    usb_free_urb(kbd->led_urb);
+fail5:
+    usb_free_urb(kbd->irq_urb);
+fail4:
+    usb_free_coherent(udev, sizeof(struct usb_ctrlrequest), kbd->cr, kbd->cr_dma);
+fail3:
+    usb_free_coherent(udev, 1, kbd->leds, kbd->leds_dma);
+fail2:
+    usb_free_coherent(udev, DATA_SIZE, kbd->data, kbd->data_dma);
+fail1:
     input_free_device(input_dev);
     kfree(kbd);
-    return -1;
+    return error;
 }
 
 static void kbd_disconnect(struct usb_interface *intf) {

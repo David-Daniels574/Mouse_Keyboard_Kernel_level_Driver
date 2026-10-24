@@ -30,7 +30,6 @@ static void mouse_irq(struct urb *urb)
     unsigned char *data = mouse->data;
     struct input_dev *dev = mouse->input;
     int status;
-    int i;
 
     switch (urb->status) {
     case 0: break;
@@ -42,11 +41,6 @@ static void mouse_irq(struct urb *urb)
         goto resubmit;
     }
 
-    printk(KERN_INFO "MOUSE-DEBUG: Len=%d Data=", urb->actual_length);
-    for (i = 0; i < urb->actual_length && i < 8; i++) {
-        printk(KERN_CONT "%02x ", data[i]);
-    }
-    printk(KERN_CONT "\n");
     if (urb->actual_length >= 4) {
         input_report_key(dev, BTN_LEFT,   data[0] & 0x01);
         input_report_key(dev, BTN_RIGHT,  data[0] & 0x02);
